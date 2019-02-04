@@ -13,8 +13,6 @@ from sklearn.utils import shuffle
 from keras.preprocessing import text, sequence   
 
 
-os.chdir('C:\\Users\\InfiniteJest\\Documents\\Python_Scripts')
-
 contraction_mapping = {"ain't": "is not", "aren't": "are not","can't": "cannot", \
                        "'cause": "because", "could've": "could have", "couldn't": "could not", \
                        "didn't": "did not",  "doesn't": "does not", "don't": "do not", \
