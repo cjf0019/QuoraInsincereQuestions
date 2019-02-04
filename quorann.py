@@ -16,8 +16,6 @@ import os
 from sklearn.utils import shuffle
 from sklearn.decomposition import PCA
 
-os.chdir('C:\\Users\\InfiniteJest\\Documents\\Python_Scripts')
-
 class DataGenerator(keras.utils.Sequence):
     """Generates data for Keras. The original code is from Afshine and Shervine Amidi
     at https://stanford.edu/~shervine/blog/keras-how-to-generate-data-on-the-fly and 
