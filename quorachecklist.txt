@@ -1,0 +1,301 @@
+Linear SVM run on BoW max_df = 0.9, min_df = 0.0001. 
+0.95772% Sincere 0.69881% Insincere Precision
+0.99057% Sincere 0.3333% Insincere Recall
+0.97387% Sincere 0.451414% Insincere F Beta
+287276 Sincere vs. 18846 Insincere total (Actual)
+*** 0.45106 F1 Score
+
+
+--Redid the run with Counter()...
+154457 sincere vocab words
+30450 insincere vocab words
+160821 total
+8699735 words total
+722712 in insincere datapool
+7977023 in sincere datapool
+
+12/30
+LSTM neural network Keras:
+100 layer Embedding (no initialization)
+2 LSTM layers: 100 and 50, linear activations
+Dropout 50%
+ANN: 1, sigmoid
+*** ~0.57 F1 score
+
+LSTM neural network Keras relu:
+Same as above, but relu activation:
+*** 0.57671 F1 score
+
+LSTM neural network Keras relu, 50 window size:
+*** 0.57548 F1 score
+
+75 window size:
+*** 0.58038 F1 score
+
+75 window, 200 embed, 200 first LSTM:
+*** 0.57108 F1 score
+
+75 window, 200 embed, 100 first LSTM:
+*** 0.57648 F1 score
+
+20,000 vocab size, 200 embed, 100 first LSTM:
+*** 0.59369 F1 score
+
+20,000 vocab size, 200 embed, 100 first LSTM, 0.2 dropout:
+*** 0.58197 F1 score
+
+20,000 vocab size, 100 embed, 100 first LSTM:
+*** 0.58077 F1 score
+
+
+Attention network attempt:
+20,000 vocab size, 100 embed, 1 (bidirectional) LSTM size 100, attention on LSTM:
+Getting all 0 predictions...
+Weights are all nonzero
+Dimensions are
+(20000,100),(100,400),(100,400),(400,),(100,400),(100,400),(400,),(75,75),
+(75,),(15000,1),(1,)
+
+
+***FULL DATASET RUN, 30,000 vocab., 75 window, 200 embed, 100 first LSTM:
+Got all 0.0 predictions...
+
+
+-----------------------------------------------------
+TEST OF 0 PREDICTION ISSUE
+-----------------------------------------------------
+1) Upped vocab size to 25,000, dropout 0.4, 100 embed
+*** 0.591 F1 score
+Received high prediction, but not troll:
+"Homeowners in SF tried to evict an old lady from a rent controlled apartment. 
+Can't they refuse to renew the contract and make that person leave?"
+
+Prediction of 1:
+17 of the 20 are troll...
+The three not troll...
+1) 'How do Indonesian non-Muslims (Christians, Hindus, Buddhists) view Indonesian 
+ex-Muslim atheists talking ill about their former religion (Islam)?'
+2) 'Why do Asians (Indians, Koreans, Japanese, Chinese) have a strong family and 
+less cases of divorce?'
+3) 'How do Americans feel that in 2010 Democrat President Obama & Secretary of State 
+Clinton colluded with Russia to give control of 20% of American uranium to Russia to 
+develop nuclear arsenal & Clinton Foundation received millions in kickbacks?'
+
+At 0.9 - 1.0:
+63 of 74 troll...
+The not troll...
+What do Asians, Hispanics, Indians and other non White minorities in the West think about 'Nigga Wake Up Call'?   
+Which is the most "Indian" city in the US (highest population of Indians/Indian culture)? (South East Asian Indians, not American Indians)   
+Why is it acceptable for Atheists to discriminate against Christians and religious people but not the other way around?   
+Do Hindus, Muslims, and Christians believe that Krishna, Muhammad, and Jesus were better people than Gautama Buddha?   
+Why is it that when people say they are attracted to Asians, they generally mean East Asians instead of Southeast Asians?   
+Is it true that Obama had a gay affair with Trump, and did Trump use slurs for a sadistic effect?   
+How can Western countries be considered sexually liberal, when powerful radical feminist movements & organisations, regular claims of assault, violence & rape culture against females in the media, etc, exist? How can men be "free" in such societies?   
+Why do white Americans discriminate against people by how non-white they appear, but African Americans often discriminate against each other based on how pure black they appear?   
+
+
+At 0.8 - 0.9:
+69 of 86 troll...
+The not troll...
+-They are all controversial sounding, but are said with sincerity.
+-Sometimes it's ambiguous whether the question would be sincere or not, and instead
+points to potential labeler bias, such as:
+'How can Western countries be considered sexually liberal, when powerful 
+radical feminist movements & organisations, regular claims of assault, 
+violence & rape culture against females in the media, etc, exist? How can men be 
+"free" in such societies?'
+-Or might require external information to understand if it would be troll, like:
+One about Trump and gay rumors.
+
+
+*** Could remove data points identified by SVM as insincere first... would shift the
+training to be more about the subtleties
+
+
+0.0 PREDICTIONS ARE COMING FROM THE EMBEDDING LAYER
+Embedding weights look fairly normal, though.
+--- Something must be up with the predict function... tried model.pop() to remove
+the layers, but still outputting just a scalar.
+*** Regarding number of word counts, 37476 words have > 1 count, 27724 > 2, 22829 > 3
+*** GETTING EXPLODING GRADIENT IN LSTM LAYER...
+    --- Around the 35th or so time step, the predictions explode (10^8 +)
+
+*** Increased batch size to 256, still no luck.
+*** Added in clipnorm (set to 1), and still getting exploding predictions at LSTM 
+layer... The model weights further don't suggest anything far off. Most have minimum
+weights that are negative, however. Furthermore, the embedding layer seems
+appropriate... mean of 0.00506, max 0.06897, min -0.0669.
+*** Tried fitting the tokenizer to just the train set, but still no luck.
+
+
+To try: 1) 'mean_squared_error' metric
+2) leakyrelu... "from keras.layers.advanced_activations import LeakyReLU
+model.add(LeakyReLU(alpha=0.3))"
+
+SOLVED!!! Switched to tanh
+
+3) NEW ATTN RUN ON KAGGLE
+Glove word embeddings, CLR learning rate, PCA of embeddings to 50. 
+*** F1: 0.651 
+Adding an extra LSTM layer didn't help.
+
+
+
+1/12/19 TO DO
+1) Add document vector in LSTM training
+2) Cluster the data/come up with "surefire" set of data. Then train what is left over.
+3) 
+
+
+On 1)... keras.layers.add_node(layer, name, input=None,...)
+
+
+Topic 0: best like use way just feel life trump work people love day person girl 
+live buy countries real true doing class computer tell social chinese learn place 
+google read americans history movie muslims living president earth media instead 
+favorite books order worth tips marketing non open care idea air
+Topic 1: does did time new long online using happen free water language girls human 
+future got car course big today happens body power getting pay create great children 
+type test market choose house medical eat win affect reason deal main support form 
+food technology muslim based public energy development weight
+Topic 2: good make job start money business like college engineering possible 
+company university sex stop study science school war number students need data 
+career software learning write working exam states website able companies major 
+degree jee learn child play rank process united making prepare given jobs writing 
+score self apply
+Topic 3: india think people know want don years indian women used different country 
+old men book bad thing time going look things american experience man life important
+ person ve ways relationship work app family age student kind having wrong makes 
+canada woman ask considered normal examples common law parents tv
+Topic 4: does people world year quora better did mean difference really high right 
+say white china english black questions come government state doesn friend change 
+home america th friends account guy believe days hard hate god question cost help 
+facebook actually answer marks music game current cause north left bank
+
+Insincere mean:
+array([0.19941072, 0.16864624, 0.12954938, 0.25218287, 0.25021079])
+
+Sincere mean:
+array([0.19562934, 0.19612409, 0.20925257, 0.20015409, 0.19883992])
+
+*** NEED TO REDO LDA MODEL WITH TF-IDF, 10 TOPICS, LOWER MAXDF AND MINDF
+The topics now are too broad, and examing the insincere closely doesn't suggest any
+specific human topic.
+
+
+REDO WITH TF-IDF 10 TOPICS, MAXDF=0.8, MINDF=0.00001:
+Topic 0: old year sex indian possible future look family best companies did woman
+ rank earth tips girls like join score actually movie bank popular test movies 
+girlfriend does months space watch available civil related bangalore face difficult 
+iphone time let paper party services married coaching japanese male chemical try team
+Topic 1: person best better money learn way bad book world women company men things 
+write working non people use children normal writing black win worth think know 
+delhi small uk date management android data phone research die care food kill 
+society like wear useful industry starting business don fight time
+Topic 2: use love help girl live people difference class tell does parents friend 
+meaning great jobs child market state make like cause house friends given weight story air humans math type word india gay answers lose song code treat marriage effect time color skin wife allowed doesn case star matter
+Topic 3: need really make trump day school work high thing does business home 
+website using best th prepare god government causes good music power relationship 
+president india travel education usa people want control famous point donald like 
+problems problem program taking cat build colleges advice world run female europe 
+consider
+Topic 4: think did new want different place history people eat true don muslims 
+video marketing reason making best safe instead happened city types successful like 
+culture isn does good ex opinion germany function product modern blood visit follow 
+facts theory act life area model service develop father young fast digital
+Topic 5: just english language does water white years long change say human social 
+makes number today people media happens value current self believe programming 
+purpose increase level single political legal lot post quora exist guys site body 
+did information world past visa question download words daily com amazon interesting
+ okay
+Topic 6: india engineering college stop free going come computer best science 
+student hate software exam jee living experience americans answer getting good main 
+medical days engineer age right physics wrong talk marks salary south card muslim 
+light mobile degree left mind death mechanical courses life neet biggest training 
+year admission
+Topic 7: does feel mean know job start quora study university china questions war 
+doing time like american favorite country countries course important canada ask 
+average law guy iit best years benefits learning common kind dog north month tv 
+term series international make long studying life ve work seen mother korea
+Topic 8: life students career examples real happen major did big best create play 
+india game deal indians apply pakistan form good hair youtube people think public 
+required military russia religion low worst does kids technology games effective 
+way british happy like uses universe characteristics depression plan want apps 
+laptop professional
+Topic 9: used good buy books ways man app chinese known read account car hard online 
+states cost choose united facebook does called design make order mba boyfriend did 
+idea field process group times role pain google skills open looking share places 
+sleep project new just speed rate ideas japan won
+
+Insincere mean:
+array([0.10239937, 0.10303701, 0.10626238, 0.10106956, 0.11278887,
+       0.10374379, 0.09187013, 0.09331128, 0.10028982, 0.0852278 ])
+
+Sincere mean:
+array([0.09898132, 0.1037689 , 0.09846993, 0.10265082, 0.09749123,
+       0.09719284, 0.10038048, 0.10252717, 0.09593277, 0.10260455])
+
+
+RERUN TF-IDF 4 TOPICS ONLY:
+Topic 0: trump need does thing live best important using science people china ways 
+class computer place website chinese th hard movie kind india facebook jee did rank 
+common test help jobs process like data marks tv person good pakistan technology 
+purpose uk youtube movies order true hair dog think south
+Topic 1: life does best good mean like learn things college year engineering job 
+person sex bad day start want change study university buy time better english 
+student feel look language real water know girls students come friend years 
+relationship career old work did examples exam girl really guy happens course
+Topic 2: people quora does love school like best did online make women think high 
+free money going questions men don man human book phone write favorite hate america 
+parents just feel known read good want major family car time eat question body way 
+woman ask child black causes degree music
+Topic 3: world difference india best does country different used company people use 
+did countries indian war government social future software app learning google makes 
+think business like usa meaning believe non states god power create work market 
+earth president happen good muslims pay media end indians united value marketing 
+make
+
+Insincere mean:
+array([0.23798334, 0.20398015, 0.29036013, 0.26767638])
+
+Sincere mean:
+array([0.23871172, 0.25848447, 0.25293742, 0.2498664 ])
+
+Third seems more news/controversial related
+
+
+3 TOPICS ONLY:
+Topic 0: india did does difference world money trump country think best people 
+use happen china countries like number war american state indian favorite chinese 
+phone america account make google major history used usa facebook kind today power 
+living states eat create americans music president play market government buy new 
+video
+Topic 1: best good work quora job start learn india business school college 
+engineering book better study company university year online student science does 
+english language books experience class questions way doing computer time students 
+career write software future website need learning examples important exam known 
+thread high data working
+Topic 2: does people like life person feel know don mean think make did love women 
+just want long really old time sex day thing say men girl things live stop bad look 
+good tell come water girls white black way friend man years relationship social
+human friends ve having parents
+
+
+Insincere:
+array([0.36742258, 0.18144956, 0.45112786])
+Sincere:
+array([0.31017274, 0.3344184 , 0.35540885])
+
+
+LDA ATTENTION NETWORK EXP:
+On large dataset, got 0.6363 F1 
+
+Without LDA:
+On large dataset, got 0.6472 F1 at 0.33 thresh
+
+
+*** Reduced the dataset size to all of the insincere, and only 500000 of the sincere...
+The attention network on a test set of about 180000, gets about 0.75537 F1 at 0.35 threshold.
+On the traditional test dataset, get 0.6738 F1 at 0.5. I forgot to exclude some of the insincere
+from original training, though, so they all were used in training.
+
