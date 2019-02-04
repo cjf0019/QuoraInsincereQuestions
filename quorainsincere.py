@@ -5,7 +5,6 @@ Created on Mon Nov 19 15:19:57 2018
 @author: InfiniteJest
 """
 import os
-os.chdir('C:\\Users\\InfiniteJest\\Documents\\Python_Scripts')
 import re
 import pandas as pd 
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
