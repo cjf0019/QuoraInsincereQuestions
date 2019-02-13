@@ -1,8 +1,14 @@
 # -*- coding: utf-8 -*-
 """
 Created on Sun Jan 13 18:13:21 2019
-
-@author: InfiniteJest
+Implements a custom bidirectional LSTM attention model that incorporates LDA topic weights into training.
+After preprocessing, Latent Dirichlet Allocation is performed. Comparisons of the sincere vs. insincere datapools
+suggest significant differences in average topic weights. The idea behind the network is to weigh LSTM attention 
+network outputs by topic weights during training. 1) A separate set of bi-LSTM attention network weights are trained
+per topic, and 2) The LDA weights act as a weighted average (dot product with) for these separate network outputs. 
+So, ideally the network of whichever topic is most relevant for a particular sentence will have more weight compared to
+outputs of networks for topics not characteristic of the sentences.
+@author: Connor Favreau
 """
 
 import gensim
@@ -186,9 +192,6 @@ sincere = train_df[train_df['target'] == 0]
 
 
 
-
-
-
 df = train_df[0:200000]
 ldaresult = lda.transform(vectorized[0:200000])
 df['lda'] = list(ldaresult)
@@ -212,11 +215,7 @@ df['vectorized'] = sequence.pad_sequences(list(df['vectorized']),maxlen=75).toli
 
 """
 In what follows, a custom attention bi-directional LSTM model was created that incorporates
-LDA topic weights into training. Three separate attention bi-directional LSTM models 
-are trained concurrently, and, at the last step of the overall network, these 
-networks are 
-
-
+LDA topic weights into training, as described above.
 """
 
 import keras
