@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 """
 Created on Sat Dec  8 08:38:14 2018
-
-@author: InfiniteJest
+Examines which tokens in the Quora dataset pose the most significance. To do this:
+1) Performs Recursive Feature Elimination on a simple Linear SVM of Bag of Words model.
+2) Finds a) the most common words in the insincere datapool but not common in the sincere and 
+b) vice versa
+@author: Connor Favreau
 """
 
 import os
