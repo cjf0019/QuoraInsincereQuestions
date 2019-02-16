@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 """
 Created on Mon Nov 19 15:19:57 2018
-
-@author: InfiniteJest
+Runs basic Random Forest and SVM models using basic preprocessing and
+either tfidf or BoWs features. Various parameter tuning, such as 
+class weighting was performed, and text that hit reasonably well versus 
+not well at all was examined.
+@author: Connor Favreau
 """
 import os
 import re
