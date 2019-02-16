@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """
 Created on Mon Dec 10 18:22:59 2018
-
-@author: InfiniteJest
+Neural network training for Kaggle's Quora Insincere questions competition.
+Includes preprocessing, Keras models, training, and testing.
+The models include a standard LSTM, a and a biLSTM with attention.
+@author: Connor Favreau
 """
 from keras.models import Sequential, load_model
 from keras.layers import *
@@ -13,13 +15,163 @@ import keras
 import numpy as np
 import pandas as pd
 import os
+import re
 from sklearn.utils import shuffle
 from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+
+from keras.preprocessing import text, sequence   
+
+
+# Processing functions from: https://www.kaggle.com/christofhenkel/how-to-preprocessing-when-using-embeddings
+# and https://www.kaggle.com/theoviel/improve-your-score-with-some-text-preprocessing
+
+contraction_mapping = {"ain't": "is not", "aren't": "are not","can't": "cannot", \
+                       "'cause": "because", "could've": "could have", "couldn't": "could not", \
+                       "didn't": "did not",  "doesn't": "does not", "don't": "do not", \
+                       "hadn't": "had not", "hasn't": "has not", "haven't": "have not", \
+                       "he'd": "he would","he'll": "he will", "he's": "he is", "how'd": "how did", \
+                       "how'd'y": "how do you", "how'll": "how will", "how's": "how is",  \
+                       "I'd": "I would", "I'd've": "I would have", "I'll": "I will", \
+                       "I'll've": "I will have","I'm": "I am", "I've": "I have", "i'd": "i would", \
+                       "i'd've": "i would have", "i'll": "i will",  "i'll've": "i will have", \
+                       "i'm": "i am", "i've": "i have", "isn't": "is not", "it'd": "it would", \
+                       "it'd've": "it would have", "it'll": "it will", "it'll've": "it will have", \
+                       "it's": "it is", "let's": "let us", "ma'am": "madam", "mayn't": "may not", \
+                       "might've": "might have","mightn't": "might not","mightn't've": "might not have", \
+                       "must've": "must have", "mustn't": "must not", "mustn't've": "must not have", \
+                       "needn't": "need not", "needn't've": "need not have","o'clock": "of the clock", \
+                       "oughtn't": "ought not", "oughtn't've": "ought not have", "shan't": "shall not", \
+                       "sha'n't": "shall not", "shan't've": "shall not have", "she'd": "she would", \
+                       "she'd've": "she would have", "she'll": "she will", "she'll've": "she will have", \
+                       "she's": "she is", "should've": "should have", "shouldn't": "should not", \
+                       "shouldn't've": "should not have", "so've": "so have","so's": "so as", \
+                       "this's": "this is","that'd": "that would", "that'd've": "that would have", \
+                       "that's": "that is", "there'd": "there would", "there'd've": "there would have", \
+                       "there's": "there is", "here's": "here is","they'd": "they would", \
+                       "they'd've": "they would have", "they'll": "they will", "they'll've": "they will have", \
+                       "they're": "they are", "they've": "they have", "to've": "to have", \
+                       "wasn't": "was not", "we'd": "we would", "we'd've": "we would have", \
+                       "we'll": "we will", "we'll've": "we will have", "we're": "we are", \
+                       "we've": "we have", "weren't": "were not", "what'll": "what will", \
+                       "what'll've": "what will have", "what're": "what are",  "what's": "what is", \
+                       "what've": "what have", "when's": "when is", "when've": "when have", \
+                       "where'd": "where did", "where's": "where is", "where've": "where have", \
+                       "who'll": "who will", "who'll've": "who will have", "who's": "who is", \
+                       "who've": "who have", "why's": "why is", "why've": "why have", \
+                       "will've": "will have", "won't": "will not", "won't've": "will not have", \
+                       "would've": "would have", "wouldn't": "would not", "wouldn't've": "would not have", \
+                       "y'all": "you all", "y'all'd": "you all would","y'all'd've": "you all would have", \
+                       "y'all're": "you all are","y'all've": "you all have","you'd": "you would", \
+                       "you'd've": "you would have", "you'll": "you will", "you'll've": "you will have", \
+                       "you're": "you are", "you've": "you have" }
+
+def known_contractions(embed):
+    known = []
+    for contract in contraction_mapping:
+        if contract in embed:
+            known.append(contract)
+    return known
+
+def clean_contractions(text, mapping):
+    specials = ["’", "‘", "´", "`"]
+    for s in specials:
+        text = text.replace(s, "'")
+    text = ' '.join([mapping[t] if t in mapping else t for t in text.split(" ")])
+    return text
+
+def correct_spelling(x, dic):
+    for word in dic.keys():
+        x = x.replace(word, dic[word])
+    return x
+
+def unknown_punct(embed, punct):
+    unknown = ''
+    for p in punct:
+        if p not in embed:
+            unknown += p
+            unknown += ' '
+    return unknown
+
+def clean_special_chars(text, punct, mapping):
+    for p in mapping:
+        text = text.replace(p, mapping[p])
+    
+    for p in punct:
+        text = text.replace(p, ' {} '.format(p))
+    
+    specials = {'\u200b': ' ', '…': ' ... ', '\ufeff': '', 'करना': '', 'है': ''}  # Other special characters that I have to deal with in last
+    for s in specials:
+        text = text.replace(s, specials[s])
+    
+    return text
+
+def add_lower(embedding, vocab):
+    count = 0
+    for word in vocab:
+        if word in embedding and word.lower() not in embedding:
+            embedding[word.lower()] = embedding[word]
+            count += 1
+    print("Added {} words to embedding".format(count))    
+    
+    
+puncts = [',', '.', '"', ':', ')', '(', '-', '!', '?', '|', ';', "'", '$', '&', '/', '[', ']', '>', '%', '=', '#', '*', '+', '\\', '•',  '~', '@', '£', 
+ '·', '_', '{', '}', '©', '^', '®', '`',  '<', '→', '°', '€', '™', '›',  '♥', '←', '×', '§', '″', '′', 'Â', '█', '½', 'à', '…', 
+ '“', '★', '”', '–', '●', 'â', '►', '−', '¢', '²', '¬', '░', '¶', '↑', '±', '¿', '▾', '═', '¦', '║', '―', '¥', '▓', '—', '‹', '─', 
+ '▒', '：', '¼', '⊕', '▼', '▪', '†', '■', '’', '▀', '¨', '▄', '♫', '☆', 'é', '¯', '♦', '¤', '▲', 'è', '¸', '¾', 'Ã', '⋅', '‘', '∞', 
+ '∙', '）', '↓', '、', '│', '（', '»', '，', '♪', '╩', '╚', '³', '・', '╦', '╣', '╔', '╗', '▬', '❤', 'ï', 'Ø', '¹', '≤', '‡', '√', ]
+
+def clean_text(x):
+    x = str(x)
+    for punct in puncts:
+        if punct in x:
+            x = x.replace(punct, ' {} '.format(punct))
+    return x
+
+
+def clean_numbers(x):
+    if bool(re.search(r'\d', x)):
+        x = re.sub('[0-9]{5,}', '#####', x)
+        x = re.sub('[0-9]{4}', '####', x)
+        x = re.sub('[0-9]{3}', '###', x)
+        x = re.sub('[0-9]{2}', '##', x)
+    return x
+
+mispell_dict = {"ain't": "is not", "aren't": "are not","can't": "cannot", "'cause": "because", "could've": "could have", "couldn't": "could not", "didn't": "did not",  "doesn't": "does not", "don't": "do not", "hadn't": "had not", "hasn't": "has not", "haven't": "have not", "he'd": "he would","he'll": "he will", "he's": "he is", "how'd": "how did", "how'd'y": "how do you", "how'll": "how will", "how's": "how is",  "I'd": "I would", "I'd've": "I would have", "I'll": "I will", "I'll've": "I will have","I'm": "I am", "I've": "I have", "i'd": "i would", "i'd've": "i would have", "i'll": "i will",  "i'll've": "i will have","i'm": "i am", "i've": "i have", "isn't": "is not", "it'd": "it would", "it'd've": "it would have", "it'll": "it will", "it'll've": "it will have","it's": "it is", "let's": "let us", "ma'am": "madam", "mayn't": "may not", "might've": "might have","mightn't": "might not","mightn't've": "might not have", "must've": "must have", "mustn't": "must not", "mustn't've": "must not have", "needn't": "need not", "needn't've": "need not have","o'clock": "of the clock", "oughtn't": "ought not", "oughtn't've": "ought not have", "shan't": "shall not", "sha'n't": "shall not", "shan't've": "shall not have", "she'd": "she would", "she'd've": "she would have", "she'll": "she will", "she'll've": "she will have", "she's": "she is", "should've": "should have", "shouldn't": "should not", "shouldn't've": "should not have", "so've": "so have","so's": "so as", "this's": "this is","that'd": "that would", "that'd've": "that would have", "that's": "that is", "there'd": "there would", "there'd've": "there would have", "there's": "there is", "here's": "here is","they'd": "they would", "they'd've": "they would have", "they'll": "they will", "they'll've": "they will have", "they're": "they are", "they've": "they have", "to've": "to have", "wasn't": "was not", "we'd": "we would", "we'd've": "we would have", "we'll": "we will", "we'll've": "we will have", "we're": "we are", "we've": "we have", "weren't": "were not", "what'll": "what will", "what'll've": "what will have", "what're": "what are",  "what's": "what is", "what've": "what have", "when's": "when is", "when've": "when have", "where'd": "where did", "where's": "where is", "where've": "where have", "who'll": "who will", "who'll've": "who will have", "who's": "who is", "who've": "who have", "why's": "why is", "why've": "why have", "will've": "will have", "won't": "will not", "won't've": "will not have", "would've": "would have", "wouldn't": "would not", "wouldn't've": "would not have", "y'all": "you all", "y'all'd": "you all would","y'all'd've": "you all would have","y'all're": "you all are","y'all've": "you all have","you'd": "you would", "you'd've": "you would have", "you'll": "you will", "you'll've": "you will have", "you're": "you are", "you've": "you have", 'colour': 'color', 'centre': 'center', 'favourite': 'favorite', 'travelling': 'traveling', 'counselling': 'counseling', 'theatre': 'theater', 'cancelled': 'canceled', 'labour': 'labor', 'organisation': 'organization', 'wwii': 'world war 2', 'citicise': 'criticize', 'youtu ': 'youtube ', 'Qoura': 'Quora', 'sallary': 'salary', 'Whta': 'What', 'narcisist': 'narcissist', 'howdo': 'how do', 'whatare': 'what are', 'howcan': 'how can', 'howmuch': 'how much', 'howmany': 'how many', 'whydo': 'why do', 'doI': 'do I', 'theBest': 'the best', 'howdoes': 'how does', 'mastrubation': 'masturbation', 'mastrubate': 'masturbate', "mastrubating": 'masturbating', 'pennis': 'penis', 'Etherium': 'Ethereum', 'narcissit': 'narcissist', 'bigdata': 'big data', '2k17': '2017', '2k18': '2018', 'qouta': 'quota', 'exboyfriend': 'ex boyfriend', 'airhostess': 'air hostess', "whst": 'what', 'watsapp': 'whatsapp', 'demonitisation': 'demonetization', 'demonitization': 'demonetization', 'demonetisation': 'demonetization'}
+
+def _get_mispell(mispell_dict):
+    mispell_re = re.compile('(%s)' % '|'.join(mispell_dict.keys()))
+    return mispell_dict, mispell_re
+
+mispellings, mispellings_re = _get_mispell(mispell_dict)
+def replace_typical_misspell(text):
+    def replace(match):
+        return mispellings[match.group(0)]
+    return mispellings_re.sub(replace, text)
+
+#Data only available to participants in the Kaggle comptetition.
+df = pd.read_csv('../input/train.csv')
+df = shuffle(df)
+
+ # lower
+df["question_text"] = df["question_text"].apply(lambda x: x.lower())
+
+    # Clean the text
+df["question_text"] = df["question_text"].apply(lambda x: clean_text(x))
+    
+    # Clean numbers
+df["question_text"] = df["question_text"].apply(lambda x: clean_numbers(x))
+    
+    # Clean spelings
+df["question_text"] = df["question_text"].apply(lambda x: replace_typical_misspell(x))
+
+
 
 class DataGenerator(keras.utils.Sequence):
-    """Generates data for Keras. The original code is from Afshine and Shervine Amidi
-    at https://stanford.edu/~shervine/blog/keras-how-to-generate-data-on-the-fly and 
-    was modified to fit pandas dataframes and text better"""
+    """Generates data for Keras...
+        Original code from Shervine Amidi: https://stanford.edu/~shervine/blog/keras-how-to-generate-data-on-the-fly
+        but modified to fit Pandas dataframes
+        """
     def __init__(self, list_IDs, labels, df, dfcol, vocab, batch_size=32,
                  dim=(32,32,32), n_channels=1, n_classes=10, shuffle=True, predictonly=False):
         'Initialization'
@@ -89,29 +241,48 @@ class DataGenerator(keras.utils.Sequence):
                 return X, y
     
 from keras.preprocessing import text, sequence   
-df = pd.read_csv('trainsmall.csv')
+df = pd.read_csv('../input/train.csv')
 df = shuffle(df)
-partition = {}
-#partition['train'] = list(df[:800000]['qid'])
-#partition['valid'] = list(df[800000:1000000]['qid'])
-#partition['test'] = list(df[1000000:]['qid'])
 
-partition['train'] = list(df[:120000]['qid'])
-partition['valid'] = list(df[120000:1600000]['qid'])
-partition['test'] = list(df[160000:]['qid'])
+#df_in = df[df['target'] == 1]
+#train_df_in = df_in[:65000]
+#test_df_in = df_in[:65000]
+#train_df_sin = df[df['target'] == 0]
+#test_df_sin = train_df_sin[500000:675000]
+#train_df_sin = train_df_sin[:500000]
+#train_df = pd.concat([train_df_in, train_df_sin])
+#test_df = pd.concat([test_df_in, test_df_sin])
+#train_df = shuffle(train_df)
+#test_df = shuffle(test_df)
+
+partition = {}
+partition['train'] = list(df[:800000]['qid'])
+partition['valid'] = list(df[800000:1000000]['qid'])
+partition['test'] = list(df[1000000:]['qid'])
+
+#partition['train'] = list(train_df[:400000]['qid'])
+#partition['valid'] = list(train_df[400000:]['qid'])
+#partition['test'] = list(train_df[400000:]['qid'])
+
+#partition['train'] = list(df[:120000]['qid'])
+#partition['valid'] = list(df[120000:1600000]['qid'])
+#partition['test'] = list(df[160000:]['qid'])
 
 df.index = df['qid']
 labels = df['target'].to_dict()
 
-vocabulary = 27500
+#Tokenize sentences and process (one-hot and padding)
+vocabulary = 75000
 tokenizer = text.Tokenizer(num_words=vocabulary, lower=True,split=' ')
 tokenizer.fit_on_texts(df['question_text'][partition['train']].values)
 #vocabulary = len(tokenizer.word_index)
 df['vectorized'] = tokenizer.texts_to_sequences(df['question_text'].values)
 df['vectorized'] = sequence.pad_sequences(list(df['vectorized']),maxlen=75).tolist()
 
+print("Tokenization complete.")
+
 params = {'dim': np.shape(df['vectorized'][0]),
-          'batch_size': 100,
+          'batch_size': 512,
           'n_classes': 1,
           'n_channels': 1,
           'shuffle': True}
@@ -120,69 +291,34 @@ num_steps = 75
 training_generator = DataGenerator(partition['train'], labels, df, 'vectorized', vocabulary, **params)
 validation_generator = DataGenerator(partition['valid'], labels, df, 'vectorized', vocabulary, **params)
 
+### Embedding code taken from Sudalai Raj Kumar: https://www.kaggle.com/sudalairajkumar/a-look-at-different-embeddings
+EMBEDDING_FILE = '../input/embeddings/glove.840B.300d/glove.840B.300d.txt'
+def get_coefs(word,*arr): return word, np.asarray(arr, dtype='float32')
+embeddings_index = dict(get_coefs(*o.split(" ")) for o in open(EMBEDDING_FILE))
+
+all_embs = np.stack(embeddings_index.values())
+emb_mean,emb_std = all_embs.mean(), all_embs.std()
+embed_size = all_embs.shape[1]
+
+word_index = tokenizer.word_index
+nb_words = min(vocabulary, len(word_index))
+embedding_matrix = np.random.normal(emb_mean, emb_std, (nb_words, embed_size))
+for word, i in word_index.items():
+    if i >= vocabulary: continue
+    embedding_vector = embeddings_index.get(word)
+    if embedding_vector is not None: embedding_matrix[i] = embedding_vector
+
+#Perform PCA to reduce dimensionality and runtime
+pca = PCA(n_components=50)
+embedding_matrix = pca.fit_transform(embedding_matrix)
+
+###
 
 ### The following is an implementation of "Cyclic Learning Rates" proposed in "Cyclical Learning Rates for Training Neural Networks"
 ### by Leslie Smith, 2015. The code is from https://github.com/cjf0019/CLR/blob/master/clr_callback.py . 
+### Inspiration for this method from Rahul Agarwhal: https://www.kaggle.com/mlwhiz/third-place-model-for-toxic-comments-in-pytorch
 
 class CyclicLR(Callback):
-    """This callback implements a cyclical learning rate policy (CLR).
-    The method cycles the learning rate between two boundaries with
-    some constant frequency, as detailed in this paper (https://arxiv.org/abs/1506.01186).
-    The amplitude of the cycle can be scaled on a per-iteration or 
-    per-cycle basis.
-    This class has three built-in policies, as put forth in the paper.
-    "triangular":
-        A basic triangular cycle w/ no amplitude scaling.
-    "triangular2":
-        A basic triangular cycle that scales initial amplitude by half each cycle.
-    "exp_range":
-        A cycle that scales initial amplitude by gamma**(cycle iterations) at each 
-        cycle iteration.
-    For more detail, please see paper.
-    
-    # Example
-        ```python
-            clr = CyclicLR(base_lr=0.001, max_lr=0.006,
-                                step_size=2000., mode='triangular')
-            model.fit(X_train, Y_train, callbacks=[clr])
-        ```
-    
-    Class also supports custom scaling functions:
-        ```python
-            clr_fn = lambda x: 0.5*(1+np.sin(x*np.pi/2.))
-            clr = CyclicLR(base_lr=0.001, max_lr=0.006,
-                                step_size=2000., scale_fn=clr_fn,
-                                scale_mode='cycle')
-            model.fit(X_train, Y_train, callbacks=[clr])
-        ```    
-    # Arguments
-        base_lr: initial learning rate which is the
-            lower boundary in the cycle.
-        max_lr: upper boundary in the cycle. Functionally,
-            it defines the cycle amplitude (max_lr - base_lr).
-            The lr at any cycle is the sum of base_lr
-            and some scaling of the amplitude; therefore 
-            max_lr may not actually be reached depending on
-            scaling function.
-        step_size: number of training iterations per
-            half cycle. Authors suggest setting step_size
-            2-8 x training iterations in epoch.
-        mode: one of {triangular, triangular2, exp_range}.
-            Default 'triangular'.
-            Values correspond to policies detailed above.
-            If scale_fn is not None, this argument is ignored.
-        gamma: constant in 'exp_range' scaling function:
-            gamma**(cycle iterations)
-        scale_fn: Custom scaling policy defined by a single
-            argument lambda function, where 
-            0 <= scale_fn(x) <= 1 for all x >= 0.
-            mode paramater is ignored 
-        scale_mode: {'cycle', 'iterations'}.
-            Defines whether scale_fn is evaluated on 
-            cycle number or cycle iterations (training
-            iterations since start of cycle). Default is 'cycle'.
-    """
-
     def __init__(self, base_lr=0.001, max_lr=0.006, step_size=2000., mode='triangular',
                  gamma=1., scale_fn=None, scale_mode='cycle'):
         super(CyclicLR, self).__init__()
@@ -254,102 +390,12 @@ class CyclicLR(Callback):
         
         K.set_value(self.model.optimizer.lr, self.clr())
 
-###############################################
 
-#### The following is a function version of what follows below, for purposes of 
-#### more rapidly exploring the parameter space
-class LSTMNetwork(Sequential):
-    def __init__(self,vocabulary,embedsize,lstms,activation,dropout,num_steps):
-        super().__init__()
-        self.vocabulary = vocabulary
-        self.embedsize = embedsize
-        self.lstms = lstms
-        self.activation = activation
-        self.dropout = dropout
-        self.num_steps = num_steps
-        self.add(Embedding(self.vocabulary,self.embedsize, input_length=num_steps))
-        for i in range(len(lstms)-1):
-            self.add(LSTM(self.lstms[i], return_sequences=True))
-        self.add(LSTM(self.lstms[-1], return_sequences=False))
-        self.add(Dropout(self.dropout))
-        self.add(Dense(1, activation='sigmoid'))
-        optimizer = Adam()
-        self.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
-        return
+clr = CyclicLR(base_lr=0.001, max_lr=0.006, step_size=3125., mode='triangular')
 
+print('CylicLR and Embeddings Set up.')
 
-vocabularies = [5000, 10000, 20000]
-embedsizes = [100, 200, 300]
-num_stepsz = [104,100,75,50,25]
-lstmsz = [[200,100],[100,100],[50,50],[100,25]]
-dropout = [0.5,0.4,0.3,0.2,0.1]
-#################################################################
-
-embed_size = 100
-hidden_size = 100
-use_dropout=True
-model = Sequential()
-model.add(Embedding(vocabulary, embed_size, input_length=num_steps))
-model.add(Bidirectional(LSTM(hidden_size, return_sequences=True, activation='tanh', \
-               kernel_initializer='Identity')))
-
-
-model.add(LSTM(50, return_sequences=False, activation='tanh', \
-               kernel_initializer='Identity'))
-if use_dropout:
-    model.add(Dropout(0.4))
-#model.add(Dense(16, activation='relu', input_shape=(num_steps,hidden_size)))
-model.add(Dense(1, activation='sigmoid'))
-
-optimizer = Adam(clipnorm=1.0)
-model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['mean_squared_error'])
-
-model.fit_generator(generator=training_generator,
-                    validation_data=validation_generator,
-                    use_multiprocessing=False)
-
-
-#Evaluate the model
-#test_generator = DataGenerator(partition['test'], labels, df, 'vectorized', vocabulary, **params)
-
-#model.evaluate_generator(test_generator)
-
-from sklearn import metrics
-#pred_noemb_val_y = model.predict_generator(test_generator, verbose=1)
-pred_noemb_val_y = model.predict(np.array(list(df['vectorized'][partition['test']].as_matrix())))
-
-
-#### Taken from https://www.kaggle.com/sudalairajkumar/a-look-at-different-embeddings
-for thresh in np.arange(0.1, 0.501, 0.01):
-    thresh = np.round(thresh, 2)
-    print("F1 score at threshold {0} is {1}".format(thresh, \
-          metrics.f1_score(df['target'][partition['test']], (pred_noemb_val_y>thresh).astype(int))))
-
-##################################################################################
-
-dftest = df[160000:]
-dftest['predict'] = pred_noemb_val_y
-dftest.loc[dftest['predict'].idxmax()]
-dfpred1 = dftest.loc[dftest['predict'] == 1]
-
-#show whole text
-pd.set_option('max_colwidth', 800)
-
-
-def make_intermediate_model(model, layer_id):
-    from keras.models import Model
-    layers = [l for l in model.layers]
-    
-    x = model.layers[0].output
-    for i in range(1, layer_id+1):
-        x = layers[i](x)
-
-    new_model = Model(inputs=layers[0].input, outputs=x)
-    return new_model
-
-
-
-
+#The following attention model layers were taken from https://github.com/philipperemy/keras-attention-mechanism
 def attention_3d_block(inputs,num_steps,SINGLE_ATTENTION_VECTOR=False):
     # inputs.shape = (batch_size, time_steps, input_dim)
     input_dim = int(inputs.shape[2])
@@ -366,24 +412,11 @@ def attention_3d_block(inputs,num_steps,SINGLE_ATTENTION_VECTOR=False):
 
 def model_attention_applied_after_lstm(num_steps,embed_size,hidden_size, use_dropout=True):
     inputs = Input(shape=(num_steps,))
-    embed = Embedding(vocabulary, embed_size)(inputs)
+    embed = Embedding(vocabulary, embed_size, weights=[embedding_matrix])(inputs)
     lstm_out = Bidirectional(LSTM(hidden_size, return_sequences=True, activation='tanh', \
                                   kernel_initializer='Identity'))(embed)
-    gru_out = Bidirectional(GRU(hidden_size, return_sequences=True, activation='tanh', \
-                                kernel_initializer='Identity'))(lstm_out)
-    if use_dropout:
-        gru_out = Dropout(0.3)(gru_out)
-    attention_mul = attention_3d_block(gru_out,num_steps)
-    attention_mul = Flatten()(attention_mul)
-    output = Dense(1, activation='sigmoid')(attention_mul)
-    model = keras.models.Model(inputs=[inputs], outputs=output)
-    return model
-
-def model_attention_applied_after_lstm(num_steps,embed_size,hidden_size, use_dropout=True):
-    inputs = Input(shape=(num_steps,))
-    embed = Embedding(vocabulary, embed_size)(inputs)
-    lstm_out = Bidirectional(LSTM(hidden_size, return_sequences=True, activation='tanh', \
-                                  kernel_initializer='Identity'))(embed)
+#    lstm_out = Bidirectional(LSTM(hidden_size, return_sequences=True, activation='tanh', \
+#                                kernel_initializer='Identity'))(lstm_out)
     if use_dropout:
         lstm_out = Dropout(0.2)(lstm_out)
     attention_mul = attention_3d_block(lstm_out,num_steps)
@@ -392,68 +425,53 @@ def model_attention_applied_after_lstm(num_steps,embed_size,hidden_size, use_dro
     model = keras.models.Model(inputs=[inputs], outputs=output)
     return model
 
+print("Training Model...")
 
-
-### ATTEMPT TO ADD TOPIC %'s to the LSTM
-
-from KerasCustomLayers import LDALSTM
-def model_attention_applied_after_lstm(num_steps,embed_size,hidden_size, num_topics, use_dropout=True):
-    inputs = [Input(shape=(num_steps,)), Input(shape=(num_topics,))]
-    embed = Embedding(vocabulary, embed_size)(inputs[0])
-    lstm_out = LDALSTM(hidden_size, return_sequences=True, activation='tanh', \
-                                  kernel_initializer='Identity')([embed,inputs[1]])
-    if use_dropout:
-        lstm_out = Dropout(0.2)(lstm_out)
-    attention_mul = attention_3d_block(lstm_out,num_steps)
-    attention_mul = Flatten()(attention_mul)
-    output = Dense(1, activation='sigmoid')(attention_mul)
-    model = keras.models.Model(inputs=[inputs], outputs=output)
-    return model
-
-
-
-
-
-embed_size = 100
-hidden_size = 100
+embed_size = 50
+hidden_size = 50
 use_dropout=True
 attnmodel = model_attention_applied_after_lstm(num_steps,embed_size,hidden_size)
 attnmodel.compile(loss='binary_crossentropy', optimizer='adam', metrics=['mean_squared_error'])
 
 attnmodel.fit_generator(generator=training_generator,
                     validation_data=validation_generator,
-                    use_multiprocessing=False)
+                    use_multiprocessing=False, epochs=3, callbacks=[clr])
+
+#test_df['vectorized'] = tokenizer.texts_to_sequences(test_df['question_text'].values)
+#test_df['vectorized'] = sequence.pad_sequences(list(test_df['vectorized']),maxlen=75).tolist()
+from sklearn import metrics
+#pred_val_y = model.predict_generator(test_generator, verbose=1)
+
+pred_val_y = attnmodel.predict(np.array(list(df['vectorized'][partition['test']].as_matrix())))
+
+num = np.shape(pred_val_y)[0]
+
+#Determine the best threshold from the test set
+bestthresh = 0.1
+bestf1 = 0
+for thresh in np.arange(0.1, 0.501, 0.01):
+    thresh = np.round(thresh, 2)
+    f1 = metrics.f1_score(df['target'][partition['test']][:num], (pred_val_y>thresh).astype(int))
+    print("F1 score at threshold {0} is {1}".format(thresh, f1))
+    if f1 > bestf1:
+        bestf1 = f1
+        bestthresh = thresh
+print(bestthresh)
 
 
-from keras import backend as K
+submitdata = pd.read_csv('../input/test.csv')
+print(submitdata)
+submitdata.index = submitdata['qid']
+submitdata['vectorized'] = tokenizer.texts_to_sequences(submitdata['question_text'].values)
+submitdata['vectorized'] = sequence.pad_sequences(list(submitdata['vectorized']),maxlen=75).tolist()
+pred = attnmodel.predict(np.array(list(submitdata['vectorized'].as_matrix())))
 
-inp = attnmodel.input                                 # input placeholder
-outputs = [layer.output for layer in attnmodel.layers[1:]]          # all layer outputs
-functors = [K.function([inp, K.learning_phase()], [out]) for out in outputs]    # evaluation functions
+pred[pred >= bestthresh] = 1
+pred[pred < bestthresh] = 0
+pred = pred.astype(int)
+print(pred)
 
-# Testing
-test = np.random.random((1,75))[np.newaxis,...]
-layer_outs = [func([test, 1.]) for func in functors]
-print(layer_outs)
-
-shapes = [(1,75),(1,75),(1,75,100),(1,1,200),(1,1,200),(1,200,1),(1,200,75),(1,200,75),\
-          (1,1,200),(1,75,200),(1,75,200),(1,1)]
-for layer in attnmodel.layers[1:]:
-    inp = layer.input
-    functor = K.function([inp,K.learning_phase()], [out])
-        
-
-
-
-
-
-print(model.summary())
-checkpointer = ModelCheckpoint(filepath=data_path + '/model-{epoch:02d}.hdf5', verbose=1)
-num_epochs = 50
-if args.run_opt == 1:
-    model.fit_generator(train_data_generator.generate(), len(train_data)//(batch_size*num_steps), num_epochs,
-                        validation_data=valid_data_generator.generate(),
-validation_steps=len(valid_data)//(batch_size*num_steps), callbacks=[checkpointer])
-    
-    
-    
+submission = pd.DataFrame(submitdata['qid'])
+submission['prediction'] = pred
+print(submission)
+submission.to_csv("submission.csv", index=False)
